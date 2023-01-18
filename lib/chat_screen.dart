@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
 import 'package:flutter/material.dart';
+import 'package:text_to_speech/text_to_speech.dart';
 import 'package:velocity_x/velocity_x.dart';
 import 'package:voicegtpt/chatmessage.dart';
 import 'package:voicegtpt/threedots.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -21,11 +24,17 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription? _subscription;
   bool _isTyping = false;
 
+  SpeechToText _speechToText = SpeechToText();
+  bool _speechEnabled = false;
+  String _lastWords = '';
+  TextToSpeech tts = TextToSpeech();
+
   @override
   void initState() {
     // TODO: implement initState
     super.initState();
     chatGPT = ChatGPT.instance;
+    _initSpeech();
   }
 
   @override
@@ -34,10 +43,39 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  void _initSpeech() async {
+    _speechEnabled = await _speechToText.initialize();
+    setState(() {});
+  }
+
+  void _startListening() async {
+    await _speechToText.listen(onResult: _onSpeechResult);
+    setState(() {});
+    setController();
+  }
+
+  void _stopListening() async {
+    await _speechToText.stop();
+    setState(() {});
+    setController();
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      _lastWords = result.recognizedWords;
+    });
+  }
+
+  void setController() {
+    setState(() {
+      _controller.text = _lastWords;
+    });
+  }
+
   void sendMessage() {
     ChatMessage message = ChatMessage(text: _controller.text, sender: "user");
     setState(() {
-      _isTyping = false;
+      _isTyping = true;
       _messages.insert(0, message);
       _controller.clear();
     });
@@ -45,7 +83,7 @@ class _ChatScreenState extends State<ChatScreen> {
         prompt: message.text, model: kTranslateModelV3, max_tokens: 200);
 
     _subscription = chatGPT!
-        .builder("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",
+        .builder("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",
             orgId: "")
         .onCompleteStream(request: request)
         .listen((event) {
@@ -55,8 +93,11 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       setState(() {
+        _isTyping = false;
         _messages.insert(0, botMessage);
       });
+
+      tts.speak(botMessage.text); 
     });
   }
 
@@ -67,12 +108,12 @@ class _ChatScreenState extends State<ChatScreen> {
           child: TextField(
             controller: _controller,
             onSubmitted: (value) => sendMessage(),
-            decoration:
-                InputDecoration.collapsed(hintText: "Question/description"),
+            decoration: const InputDecoration.collapsed(
+                hintText: "Question/description"),
           ),
         ),
         IconButton(
-          icon: Icon(Icons.send),
+          icon: const Icon(Icons.send),
           onPressed: () => sendMessage(),
         ),
       ],
@@ -83,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('ChatGPT'),
+        title: Text('VoiceGTPT'),
       ),
       body: SafeArea(
         child: Column(
@@ -104,8 +145,17 @@ class _ChatScreenState extends State<ChatScreen> {
             Container(
               decoration: BoxDecoration(color: context.cardColor),
               child: _buildTextComposer(),
-            )
+            ),
           ],
+        ),
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 50.0),
+        child: FloatingActionButton(
+          onPressed:
+              _speechToText.isNotListening ? _startListening : _stopListening,
+          tooltip: 'Listen',
+          child: Icon(_speechToText.isNotListening ? Icons.mic_off : Icons.mic),
         ),
       ),
     );
